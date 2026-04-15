@@ -1,0 +1,18 @@
+model: yolov8n.pt
+
+tracking:
+  confidence: 0.25
+  iou: 0.45
+  device: null
+
+evaluation:
+  short_track_threshold_frames: 10
+  handoff_max_gap_frames: 8
+  handoff_max_distance_px: 80.0
+
+visualization:
+  trail_length: 30
+  draw_boxes: true
+  draw_labels: true
+  draw_lines: true
+  draw_zones: true

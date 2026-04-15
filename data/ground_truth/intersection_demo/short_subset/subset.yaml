@@ -1,0 +1,10 @@
+scene_name: intersection_demo
+video_path: data/intersection_demo.mp4
+frame_start: 330
+frame_end: 339
+classes:
+  - bus
+description: >
+  Initial short bus-only GT subset for the intersection_demo scene.
+  Boxes were seeded from ByteTrack and BoT-SORT consensus on a single clearly visible bus
+  and manually spot-checked on the first and last frames.

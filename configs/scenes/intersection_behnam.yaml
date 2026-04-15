@@ -1,0 +1,74 @@
+video_path: data/traffic_analysis.mov
+output_name: intersection_behnam
+
+target_classes:
+  - car
+  - bus
+  - truck
+  - motorcycle
+
+analytics_classes:
+  - car
+  - bus
+  - truck
+  - motorcycle
+
+active_area:
+  - [420, 400]
+  - [720, 400]
+  - [830, 790]
+  - [620, 790]
+  - [230, 540]
+  - [230, 470]
+
+count_lines:
+  - name: east_entry_line
+    points:
+      - [500, 430]
+      - [500, 560]
+  - name: west_exit_line
+    points:
+      - [420, 455]
+      - [420, 550]
+  - name: south_entry_line
+    points:
+      - [700, 640]
+      - [700, 745]
+  - name: east_exit_line
+    points:
+      - [720, 650]
+      - [720, 770]
+
+zones:
+  - name: east_entry
+    polygon:
+      - [480, 430]
+      - [720, 430]
+      - [700, 560]
+      - [450, 550]
+  - name: west_exit
+    polygon:
+      - [250, 460]
+      - [430, 460]
+      - [430, 545]
+      - [250, 545]
+  - name: south_entry
+    polygon:
+      - [620, 640]
+      - [710, 640]
+      - [730, 745]
+      - [635, 750]
+  - name: east_exit
+    polygon:
+      - [720, 650]
+      - [820, 650]
+      - [820, 770]
+      - [720, 770]
+
+# Adapted from Behnam-Asadi/YOLOv8-traffic-analysis, then retuned for
+# this repo's bottom-center trigger point and the visible lane footprint.
+movement_map:
+  east_entry:
+    west_exit: straight
+  south_entry:
+    east_exit: right

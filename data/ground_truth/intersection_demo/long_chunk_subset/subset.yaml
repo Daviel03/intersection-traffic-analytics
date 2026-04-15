@@ -1,0 +1,9 @@
+scene_name: intersection_demo
+video_path: data/intersection_demo.mp4
+frame_start: 1660
+frame_end: 1839
+classes:
+- car
+description: Consensus-seeded long continuous chunk for intersection_demo. Frames
+  1660-1839 were bootstrapped from bytetrack and botsort overlap on classes car and
+  should be manually reviewed before final paper claims.

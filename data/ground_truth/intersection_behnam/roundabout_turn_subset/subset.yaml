@@ -1,0 +1,11 @@
+scene_name: intersection_behnam
+video_path: data/traffic_analysis.mov
+frame_start: 736
+frame_end: 749
+classes:
+  - car
+description: >
+  Overhead Behnam subset with a south-entry vehicle completing a right-turn arc
+  while nearby cars occupy adjacent lanes around the roundabout.
+  Boxes were seeded from ByteTrack and BoT-SORT consensus and manually spot-checked
+  on entry, mid-turn, and exit-adjacent frames.

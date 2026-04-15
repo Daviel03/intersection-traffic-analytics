@@ -1,0 +1,11 @@
+scene_name: intersection_demo
+video_path: data/intersection_demo.mp4
+frame_start: 1646
+frame_end: 1655
+classes:
+  - car
+description: >
+  Harder multi-vehicle car subset for the intersection_demo scene.
+  This window contains two persistent crossing vehicles plus a third car entering mid-sequence.
+  Boxes were seeded from ByteTrack and BoT-SORT consensus and manually spot-checked on early,
+  middle, and late frames to keep the subset lightweight but non-trivial.

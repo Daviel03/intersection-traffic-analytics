@@ -1,0 +1,13 @@
+scene_name: intersection_demo
+video_path: data/intersection_demo.mp4
+frame_start: 1640
+frame_end: 1660
+classes:
+  - car
+description: >
+  Wider multi-car GT subset for the intersection_demo scene.
+  This window extends the original interaction subset to cover more approach and exit context,
+  including early background cars, the main foreground crossing vehicles, and later background
+  arrivals that create a broader identity-maintenance test. Boxes were seeded from ByteTrack
+  and BoT-SORT consensus where both trackers agreed and manually spot-checked on early,
+  middle, and late frames.

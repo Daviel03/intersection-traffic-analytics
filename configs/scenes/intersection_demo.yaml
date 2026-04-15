@@ -1,0 +1,82 @@
+video_path: data/intersection_demo.mp4
+output_name: intersection_demo
+
+target_classes:
+  - person
+  - bicycle
+  - car
+  - bus
+  - truck
+  - motorcycle
+
+analytics_classes:
+  - bicycle
+  - car
+  - bus
+  - truck
+  - motorcycle
+
+active_area:
+  - [0, 730]
+  - [120, 700]
+  - [250, 680]
+  - [360, 620]
+  - [800, 642]
+  - [1200, 690]
+  - [1420, 790]
+  - [1660, 860]
+  - [1919, 930]
+  - [1919, 1079]
+  - [0, 1079]
+
+count_lines:
+  - name: far_entry_line
+    points:
+      - [330, 650]
+      - [840, 644]
+  - name: left_exit_line
+    points:
+      - [80, 620]
+      - [350, 760]
+  - name: foreground_exit_line
+    points:
+      - [360, 825]
+      - [1560, 865]
+  - name: right_exit_line
+    points:
+      - [1549, 700]
+      - [1919, 760]
+
+zones:
+  - name: far_entry
+    polygon:
+      - [250, 555]
+      - [664, 620]
+      - [1040, 700]
+      - [180, 715]
+  - name: foreground_exit
+    polygon:
+      - [420, 690]
+      - [1480, 700]
+      - [1880, 1079]
+      - [120, 1079]
+  - name: right_exit
+    polygon:
+      - [1260, 670]
+      - [1919, 710]
+      - [1919, 980]
+      - [1620, 980]
+      - [1360, 790]
+  - name: left_exit
+    polygon:
+      - [0, 620]
+      - [180, 620]
+      - [360, 700]
+      - [280, 860]
+      - [0, 920]
+
+movement_map:
+  far_entry:
+    left_exit: left
+    foreground_exit: straight
+    right_exit: right
