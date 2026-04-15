@@ -31,43 +31,73 @@ Useful links:
 - exports an annotated video, per-frame tracks, event logs, and a run summary
 - compares both trackers on the same scene config
 
+## Current Status
+
+Phase 1 is working and already includes:
+
+- two full-scene comparison runs: `intersection_demo` and `intersection_behnam`
+- scene-calibration helpers for previewing overlays and clicking YAML-ready points
+- experiment aggregation into CSV, LaTeX tables, and PNG/PDF plots
+- GT-backed subset evaluation with TrackEval-compatible exports
+- multiple included GT subsets, from a tiny sanity check to a longer continuous chunk
+
 ## Repo Layout
 
 ```text
 .
-├── README.md
-├── requirements.txt
-├── .gitignore
-├── configs/
-│   ├── default.yaml
-│   ├── trackers/
-│   │   ├── bytetrack.yaml
-│   │   └── botsort.yaml
-│   └── scenes/
-│       └── intersection_demo.yaml
-├── data/
-├── outputs/
-├── scripts/
-│   ├── run_pipeline.py
-│   └── compare_trackers.py
-└── src/traffic_analytics/
-    ├── pipeline.py
-    ├── tracker_backend.py
-    ├── analytics.py
-    ├── visualization.py
-    ├── evaluation.py
-    ├── config.py
-    ├── geometry.py
-    └── io_utils.py
+|- README.md
+|- requirements.txt
+|- .gitignore
+|- configs/
+|  |- default.yaml
+|  |- trackers/
+|  |  |- bytetrack.yaml
+|  |  `- botsort.yaml
+|  `- scenes/
+|     |- intersection_demo.yaml
+|     `- intersection_behnam.yaml
+|- data/
+|  `- ground_truth/
+|     |- intersection_demo/
+|     `- intersection_behnam/
+|- outputs/
+|- scripts/
+|  |- run_pipeline.py
+|  |- compare_trackers.py
+|  |- export_scene_preview.py
+|  |- pick_scene_points.py
+|  |- run_experiments.py
+|  |- make_plots.py
+|  |- run_gt_eval.py
+|  |- run_gt_suite.py
+|  `- bootstrap_gt_subset.py
+|- tests/
+`- src/traffic_analytics/
+   |- pipeline.py
+   |- tracker_backend.py
+   |- analytics.py
+   |- visualization.py
+   |- evaluation.py
+   |- experiments.py
+   |- plotting.py
+   |- gt_eval.py
+   |- gt_bootstrap.py
+   |- config.py
+   |- geometry.py
+   `- io_utils.py
 ```
 
 ## Setup
 
 Python `3.10` to `3.12` is the safest target for Ultralytics and OpenCV.
 
+The commands below use `python`, but on Windows `py -3.11` is a good default if you have multiple Python versions installed.
+
 ```bash
 pip install -r requirements.txt
 ```
+
+`yolov8n.pt`, raw videos, generated outputs, and local TrackEval clones are intentionally not tracked in Git. If the YOLO weights are not already present, Ultralytics can download them on first run.
 
 Place one short local intersection clip at:
 
@@ -84,6 +114,42 @@ data/traffic_analysis.mov
 ```
 
 Its imported rectangular zone geometry lives in `configs/scenes/intersection_behnam.yaml`.
+
+## Quick Start
+
+If you want the shortest useful path after cloning:
+
+1. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+2. Run both trackers on both scenes
+
+```bash
+python scripts/compare_trackers.py --scene configs/scenes/intersection_demo.yaml
+python scripts/compare_trackers.py --scene configs/scenes/intersection_behnam.yaml
+```
+
+3. Aggregate experiment tables and plots
+
+```bash
+python scripts/run_experiments.py
+python scripts/make_plots.py
+```
+
+4. Run the GT-backed evaluation layer if TrackEval is available locally
+
+```bash
+python scripts/run_gt_suite.py --trackeval-root third_party/TrackEval
+```
+
+That sequence gives you:
+
+- per-scene tracker outputs under `outputs/<scene>/`
+- aggregate CSV and LaTeX summaries under `outputs/experiments/`
+- full-scene plots and GT plots under `outputs/experiments/plots/`
 
 ## Usage
 
@@ -152,6 +218,14 @@ python scripts/run_gt_suite.py --trackeval-root /path/to/TrackEval
 ```
 
 The bootstrap helper creates review-ready long subsets from ByteTrack/BoT-SORT overlap so you can scale beyond tiny clips without hand-entering hundreds of boxes. Treat those bootstrap-generated subsets as draft GT that should still be spot-checked before final paper claims.
+
+Included GT subsets in this repo:
+
+- `intersection_demo/short_subset`: easy single-bus sanity check
+- `intersection_demo/interaction_subset`: compact multi-car interaction
+- `intersection_demo/interaction_wide_subset`: wider local interaction window
+- `intersection_demo/long_chunk_subset`: 180-frame continuous chunk generated from tracker consensus
+- `intersection_behnam/roundabout_turn_subset`: overhead turn-focused subset
 
 ## Scene YAML
 
@@ -311,13 +385,13 @@ outputs/
       tracking_proxies_<scene>.pdf
       transitions_<scene>.png
       transitions_<scene>.pdf
+      gt_metrics_<scene>_<subset>.png
+      gt_metrics_<scene>_<subset>.pdf
     gt/
       gt_eval_summary.csv
       gt_eval_table.tex
       filter_checks.csv
-    plots/
-      gt_metrics_<scene>_<subset>.png
-      gt_metrics_<scene>_<subset>.pdf
+      workspace/
 ```
 
 `metrics_summary.csv` stores one row per `(scene, tracker)` run with:
@@ -336,6 +410,8 @@ outputs/
 `run_experiments.py` reuses existing scene outputs by default and reruns only missing scenes unless `--force-rerun` is passed.
 
 `make_plots.py` reads the aggregated CSVs and regenerates the PNG/PDF plots independently, so you do not need to rerun the trackers just to refresh figures.
+
+`filter_checks.csv` is the manual sanity-check artifact for GT evaluation. It records the exact frame range, classes, row counts, and track counts used for both GT and predictions before TrackEval runs.
 
 ## GT Subset Format
 
@@ -384,6 +460,14 @@ The GT script filters both GT and predictions to the same frame range and class 
 - `FN`
 
 The GT plot uses `HOTA`, `IDF1`, and `MOTA`. `IDSW`, `FP`, and `FN` remain table-only in v1. When multiple labeled subsets exist for one scene, `make_plots.py` writes one GT figure per `(scene, subset)`.
+
+For longer continuous chunks, the repo also includes a consensus bootstrap path:
+
+- `bootstrap_gt_subset.py` matches ByteTrack and BoT-SORT boxes by IoU
+- averaged boxes are written into a draft `gt_tracks.csv`
+- the result is useful for scaling beyond tiny subsets, but it should still be reviewed before you describe it as final GT in a paper
+
+This is a pragmatic class-project compromise: full-scene analytics run on the entire clip, while MOT-style GT metrics are computed on smaller labeled or bootstrap-reviewed subsets.
 
 For Overleaf, the generated `.tex` tables use `booktabs`, so add:
 
