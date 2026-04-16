@@ -16,10 +16,14 @@ data/*.mkv
 data/*.csv
 data/*.json
 !data/README.md
+data/lidar/*
+!data/lidar/README.md
 
 outputs/*
 !outputs/.gitkeep
 third_party/TrackEval/
+
+notebooks/.ipynb_checkpoints/
 
 .DS_Store
 Thumbs.db

@@ -42,6 +42,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Tracker names to evaluate. Defaults to bytetrack botsort.",
     )
     parser.add_argument(
+        "--system-variants",
+        nargs="*",
+        default=None,
+        help=(
+            "Optional system variants to evaluate, such as camera_bytetrack or "
+            "camera_lidar_bytetrack_fusion. If omitted, camera_<tracker> variants are used."
+        ),
+    )
+    parser.add_argument(
         "--output-root",
         default="outputs",
         help="Root output folder for tracker runs. Defaults to outputs/.",
@@ -67,6 +76,7 @@ def main() -> None:
         trackeval_root=trackeval_root,
         ground_truth_root=ground_truth_root,
         output_root=output_root,
+        system_variants=tuple(args.system_variants) if args.system_variants else None,
     )
 
     print("Finished GT evaluation")

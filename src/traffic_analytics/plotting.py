@@ -5,14 +5,26 @@ from pathlib import Path
 
 from traffic_analytics.io_utils import ensure_dir
 
-TRACKER_ORDER = ("bytetrack", "botsort")
-TRACKER_LABELS = {
-    "bytetrack": "ByteTrack",
-    "botsort": "BoT-SORT",
+VARIANT_ORDER = (
+    "camera_bytetrack",
+    "camera_botsort",
+    "camera_lidar_bytetrack_fusion",
+    "camera_lidar_botsort_fusion",
+    "camera_lidar_fusion",
+)
+VARIANT_LABELS = {
+    "camera_bytetrack": "Camera ByteTrack",
+    "camera_botsort": "Camera BoT-SORT",
+    "camera_lidar_bytetrack_fusion": "Camera+LiDAR ByteTrack",
+    "camera_lidar_botsort_fusion": "Camera+LiDAR BoT-SORT",
+    "camera_lidar_fusion": "Camera+LiDAR Fusion",
 }
-TRACKER_COLORS = {
-    "bytetrack": "#1f77b4",
-    "botsort": "#ff7f0e",
+VARIANT_COLORS = {
+    "camera_bytetrack": "#1f77b4",
+    "camera_botsort": "#ff7f0e",
+    "camera_lidar_bytetrack_fusion": "#2ca02c",
+    "camera_lidar_botsort_fusion": "#d62728",
+    "camera_lidar_fusion": "#9467bd",
 }
 
 
@@ -31,12 +43,12 @@ def create_experiment_plots(
     if not metrics_summary_path.exists():
         raise FileNotFoundError(
             f"Experiment metrics CSV not found: {metrics_summary_path}. "
-            "Run scripts/run_experiments.py first."
+            "Run scripts/run_experiments.py or scripts/run_fusion_experiments.py first."
         )
     if not transition_counts_path.exists():
         raise FileNotFoundError(
             f"Transition counts CSV not found: {transition_counts_path}. "
-            "Run scripts/run_experiments.py first."
+            "Run scripts/run_experiments.py or scripts/run_fusion_experiments.py first."
         )
 
     metric_rows = load_csv_rows(metrics_summary_path)
@@ -63,9 +75,7 @@ def create_experiment_plots(
 
         scene_gt_rows = [row for row in gt_rows if row["scene_name"] == scene_name]
         if scene_gt_rows:
-            output_paths[scene_name].extend(
-                _create_gt_plots(scene_name, scene_gt_rows, plots_dir)
-            )
+            output_paths[scene_name].extend(_create_gt_plots(scene_name, scene_gt_rows, plots_dir))
 
     return output_paths
 
@@ -81,9 +91,8 @@ def _create_standard_scene_plots(
     outputs = []
     outputs.extend(
         _save_grouped_bar_chart(
-            scene_name=scene_name,
             categories=("left", "straight", "right", "unknown"),
-            tracker_values=_scene_tracker_values(
+            variant_values=_scene_variant_values(
                 scene_metric_rows,
                 {
                     "left": "left_count",
@@ -99,9 +108,8 @@ def _create_standard_scene_plots(
     )
     outputs.extend(
         _save_grouped_bar_chart(
-            scene_name=scene_name,
             categories=("total_line_crossings", "total_zone_transitions"),
-            tracker_values=_scene_tracker_values(
+            variant_values=_scene_variant_values(
                 scene_metric_rows,
                 {
                     "total_line_crossings": "total_line_crossings",
@@ -115,14 +123,13 @@ def _create_standard_scene_plots(
     )
     outputs.extend(
         _save_grouped_bar_chart(
-            scene_name=scene_name,
             categories=(
                 "avg_track_length",
                 "short_track_ratio",
                 "suspected_handoff_count",
                 "duplicate_suppressed_events",
             ),
-            tracker_values=_scene_tracker_values(
+            variant_values=_scene_variant_values(
                 scene_metric_rows,
                 {
                     "avg_track_length": "avg_track_length",
@@ -143,13 +150,42 @@ def _create_standard_scene_plots(
     if transition_names:
         outputs.extend(
             _save_grouped_bar_chart(
-                scene_name=scene_name,
                 categories=tuple(transition_names),
-                tracker_values=_transition_tracker_values(scene_transition_rows, transition_names),
+                variant_values=_transition_variant_values(
+                    scene_transition_rows,
+                    transition_names,
+                    _variant_order(scene_metric_rows),
+                ),
                 title=f"{_display_scene_name(scene_name)}: Transition Counts",
                 ylabel="Count",
                 output_stem=plots_dir / f"transitions_{scene_name}",
                 rotate_xticks=True,
+            )
+        )
+
+    if any(int(row.get("fusion_enabled", "0") or 0) == 1 for row in scene_metric_rows):
+        outputs.extend(
+            _save_grouped_bar_chart(
+                categories=(
+                    "lidar_supported_track_count",
+                    "lidar_unsupported_track_count",
+                    "fused_confirmation_events",
+                    "suppressed_camera_only_tracks",
+                    "average_lidar_support_ratio",
+                ),
+                variant_values=_scene_variant_values(
+                    scene_metric_rows,
+                    {
+                        "lidar_supported_track_count": "lidar_supported_track_count",
+                        "lidar_unsupported_track_count": "lidar_unsupported_track_count",
+                        "fused_confirmation_events": "fused_confirmation_events",
+                        "suppressed_camera_only_tracks": "suppressed_camera_only_tracks",
+                        "average_lidar_support_ratio": "average_lidar_support_ratio",
+                    },
+                ),
+                title=f"{_display_scene_name(scene_name)}: Fusion Diagnostics",
+                ylabel="Value",
+                output_stem=plots_dir / f"fusion_diagnostics_{scene_name}",
             )
         )
     return outputs
@@ -164,24 +200,11 @@ def _create_gt_plots(
     subset_names = sorted({row["subset_name"] for row in gt_rows if row.get("subset_name")})
     for subset_name in subset_names:
         subset_rows = [row for row in gt_rows if row.get("subset_name") == subset_name]
-        tracker_values = {tracker: [] for tracker in TRACKER_ORDER}
-        per_tracker = {row["tracker_name"].lower(): row for row in subset_rows}
-        for tracker_name in TRACKER_ORDER:
-            row = per_tracker.get(tracker_name)
-            if row is None:
-                tracker_values[tracker_name] = [0.0, 0.0, 0.0]
-                continue
-            tracker_values[tracker_name] = [
-                _to_float(row.get("HOTA")),
-                _to_float(row.get("IDF1")),
-                _to_float(row.get("MOTA")),
-            ]
-
+        variant_values = _gt_variant_values(subset_rows)
         outputs.extend(
             _save_grouped_bar_chart(
-                scene_name=scene_name,
                 categories=("HOTA", "IDF1", "MOTA"),
-                tracker_values=tracker_values,
+                variant_values=variant_values,
                 title=(
                     f"{_display_scene_name(scene_name)}: "
                     f"GT Tracking Metrics ({_display_scene_name(subset_name)})"
@@ -193,40 +216,56 @@ def _create_gt_plots(
     return outputs
 
 
-def _scene_tracker_values(
+def _scene_variant_values(
     scene_metric_rows: list[dict[str, str]],
     category_to_column: dict[str, str],
 ) -> dict[str, list[float]]:
-    row_by_tracker = {
-        row["tracker_name"].lower(): row for row in scene_metric_rows
-    }
-    values = {tracker: [] for tracker in TRACKER_ORDER}
-    for tracker_name in TRACKER_ORDER:
-        row = row_by_tracker.get(tracker_name, {})
+    row_by_variant = {_variant_name(row): row for row in scene_metric_rows}
+    values = {variant: [] for variant in _variant_order(scene_metric_rows)}
+    for variant_name in values:
+        row = row_by_variant.get(variant_name, {})
         for category in category_to_column:
-            values[tracker_name].append(_to_float(row.get(category_to_column[category])))
+            values[variant_name].append(_to_float(row.get(category_to_column[category])))
     return values
 
 
-def _transition_tracker_values(
+def _transition_variant_values(
     scene_transition_rows: list[dict[str, str]],
     transition_names: list[str],
+    variant_names: tuple[str, ...],
 ) -> dict[str, list[float]]:
-    values = {tracker: [] for tracker in TRACKER_ORDER}
+    values = {variant: [] for variant in variant_names}
     lookup: dict[tuple[str, str], float] = {}
     for row in scene_transition_rows:
-        lookup[(row["tracker_name"].lower(), row["transition_name"])] = _to_float(row["count"])
+        lookup[(_variant_name(row), row["transition_name"])] = _to_float(row["count"])
 
-    for tracker_name in TRACKER_ORDER:
+    for variant_name in values:
         for transition_name in transition_names:
-            values[tracker_name].append(lookup.get((tracker_name, transition_name), 0.0))
+            values[variant_name].append(lookup.get((variant_name, transition_name), 0.0))
+    return values
+
+
+def _gt_variant_values(
+    subset_rows: list[dict[str, str]],
+) -> dict[str, list[float]]:
+    values = {variant: [] for variant in _variant_order(subset_rows)}
+    row_by_variant = {_variant_name(row): row for row in subset_rows}
+    for variant_name in values:
+        row = row_by_variant.get(variant_name)
+        if row is None:
+            values[variant_name] = [0.0, 0.0, 0.0]
+            continue
+        values[variant_name] = [
+            _to_float(row.get("HOTA")),
+            _to_float(row.get("IDF1")),
+            _to_float(row.get("MOTA")),
+        ]
     return values
 
 
 def _save_grouped_bar_chart(
-    scene_name: str,
     categories: tuple[str, ...],
-    tracker_values: dict[str, list[float]],
+    variant_values: dict[str, list[float]],
     title: str,
     ylabel: str,
     output_stem: Path,
@@ -234,23 +273,22 @@ def _save_grouped_bar_chart(
 ) -> list[Path]:
     plt = _require_pyplot()
     x_positions = list(range(len(categories)))
-    width = 0.35
+    variant_names = list(variant_values.keys())
+    variant_count = max(1, len(variant_names))
+    width = min(0.75 / variant_count, 0.28)
     figure_width = max(7.0, 1.2 * len(categories) + 4.0)
     fig, ax = plt.subplots(figsize=(figure_width, 4.8))
 
-    offsets = {
-        "bytetrack": -width / 2,
-        "botsort": width / 2,
-    }
-    for tracker_name in TRACKER_ORDER:
-        values = tracker_values.get(tracker_name, [0.0] * len(categories))
-        bar_positions = [x + offsets[tracker_name] for x in x_positions]
+    origin = -(width * (variant_count - 1) / 2.0)
+    for index, variant_name in enumerate(variant_names):
+        values = variant_values.get(variant_name, [0.0] * len(categories))
+        bar_positions = [x + origin + index * width for x in x_positions]
         ax.bar(
             bar_positions,
             values,
             width=width,
-            label=TRACKER_LABELS[tracker_name],
-            color=TRACKER_COLORS[tracker_name],
+            label=_display_variant_name(variant_name),
+            color=VARIANT_COLORS.get(variant_name, "#7f7f7f"),
         )
 
     ax.set_title(title)
@@ -273,6 +311,27 @@ def _save_grouped_bar_chart(
         output_paths.append(output_path)
     plt.close(fig)
     return output_paths
+
+
+def _variant_name(row: dict[str, str]) -> str:
+    explicit = str(row.get("system_variant", "")).strip().lower()
+    if explicit:
+        return explicit
+    tracker_name = str(row.get("tracker_name", "")).strip().lower()
+    if tracker_name:
+        return f"camera_{tracker_name}"
+    return "camera_unknown"
+
+
+def _variant_order(rows: list[dict[str, str]]) -> tuple[str, ...]:
+    present = {_variant_name(row) for row in rows}
+    ordered = [variant for variant in VARIANT_ORDER if variant in present]
+    extras = sorted(present - set(ordered))
+    return tuple(ordered + extras)
+
+
+def _display_variant_name(variant_name: str) -> str:
+    return VARIANT_LABELS.get(variant_name, variant_name.replace("_", " ").title())
 
 
 def _display_scene_name(scene_name: str) -> str:

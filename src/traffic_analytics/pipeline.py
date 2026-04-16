@@ -31,6 +31,10 @@ TRACK_FIELDS = [
     "y2",
     "point_x",
     "point_y",
+    "lidar_supported",
+    "lidar_support_score",
+    "lidar_range_m",
+    "fused_confidence",
 ]
 
 EVENT_FIELDS = [

@@ -16,6 +16,7 @@ from traffic_analytics.experiments import (
     TRANSITION_FIELDS,
     render_analytics_latex_table,
     render_continuity_latex_table,
+    render_fusion_latex_table,
     resolve_scene_path,
     summary_to_metrics_row,
     summary_to_transition_rows,
@@ -47,12 +48,15 @@ class ExperimentAggregationTests(unittest.TestCase):
 
         row = summary_to_metrics_row(summary)
 
+        self.assertEqual(row["system_variant"], "camera_bytetrack")
+        self.assertEqual(row["fusion_enabled"], 0)
         self.assertEqual(row["total_line_crossings"], 9)
         self.assertEqual(row["total_zone_transitions"], 7)
         self.assertEqual(row["left_count"], 0)
         self.assertEqual(row["right_count"], 0)
         self.assertEqual(row["straight_count"], 7)
         self.assertEqual(row["unknown_count"], 2)
+        self.assertEqual(row["lidar_supported_track_count"], 0)
 
     def test_summary_to_transition_rows_shape(self) -> None:
         summary = {
@@ -69,6 +73,7 @@ class ExperimentAggregationTests(unittest.TestCase):
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]["scene_name"], "intersection_demo")
         self.assertEqual(rows[0]["tracker_name"], "botsort")
+        self.assertEqual(rows[0]["system_variant"], "camera_botsort")
         self.assertIn("transition_name", rows[0])
         self.assertIn("count", rows[0])
 
@@ -76,7 +81,9 @@ class ExperimentAggregationTests(unittest.TestCase):
         metric_rows = [
             {
                 "scene_name": "intersection_demo",
+                "system_variant": "camera_bytetrack",
                 "tracker_name": "bytetrack",
+                "fusion_enabled": 0,
                 "model": "yolov8n.pt",
                 "total_line_crossings": 10,
                 "total_zone_transitions": 8,
@@ -89,17 +96,48 @@ class ExperimentAggregationTests(unittest.TestCase):
                 "short_track_ratio": 0.125,
                 "suspected_handoff_count": 3,
                 "duplicate_suppressed_events": 4,
+                "lidar_supported_track_count": 0,
+                "lidar_unsupported_track_count": 0,
+                "fused_confirmation_events": 0,
+                "suppressed_camera_only_tracks": 0,
+                "average_lidar_support_ratio": 0.0,
+            },
+            {
+                "scene_name": "intersection_demo",
+                "system_variant": "camera_lidar_bytetrack_fusion",
+                "tracker_name": "bytetrack",
+                "fusion_enabled": 1,
+                "model": "yolov8n.pt",
+                "total_line_crossings": 9,
+                "total_zone_transitions": 7,
+                "left_count": 1,
+                "straight_count": 5,
+                "right_count": 1,
+                "unknown_count": 1,
+                "unknown_movement_ratio": 0.143,
+                "avg_track_length": 18.0,
+                "short_track_ratio": 0.1,
+                "suspected_handoff_count": 2,
+                "duplicate_suppressed_events": 3,
+                "lidar_supported_track_count": 6,
+                "lidar_unsupported_track_count": 2,
+                "fused_confirmation_events": 6,
+                "suppressed_camera_only_tracks": 2,
+                "average_lidar_support_ratio": 0.625,
             }
         ]
 
         analytics_table = render_analytics_latex_table(metric_rows)
         continuity_table = render_continuity_latex_table(metric_rows)
+        fusion_table = render_fusion_latex_table(metric_rows)
 
         self.assertIn("\\toprule", analytics_table)
-        self.assertIn("Intersection Demo", analytics_table)
+        self.assertIn("Camera ByteTrack", analytics_table)
         self.assertIn("0.200", analytics_table)
         self.assertIn("Avg Track Length", continuity_table)
         self.assertIn("14.500", continuity_table)
+        self.assertIn("Camera+LiDAR ByteTrack Fusion", fusion_table)
+        self.assertIn("0.625", fusion_table)
 
     def test_resolve_scene_path_accepts_short_name_and_yaml_path(self) -> None:
         short_path = resolve_scene_path("intersection_demo")
@@ -119,7 +157,9 @@ class PlottingTests(unittest.TestCase):
             metric_rows = [
                 {
                     "scene_name": "intersection_demo",
+                    "system_variant": "camera_bytetrack",
                     "tracker_name": "bytetrack",
+                    "fusion_enabled": 0,
                     "model": "yolov8n.pt",
                     "total_line_crossings": 10,
                     "total_zone_transitions": 8,
@@ -132,10 +172,17 @@ class PlottingTests(unittest.TestCase):
                     "short_track_ratio": 0.125,
                     "suspected_handoff_count": 3,
                     "duplicate_suppressed_events": 4,
+                    "lidar_supported_track_count": 0,
+                    "lidar_unsupported_track_count": 0,
+                    "fused_confirmation_events": 0,
+                    "suppressed_camera_only_tracks": 0,
+                    "average_lidar_support_ratio": 0.0,
                 },
                 {
                     "scene_name": "intersection_demo",
+                    "system_variant": "camera_botsort",
                     "tracker_name": "botsort",
+                    "fusion_enabled": 0,
                     "model": "yolov8n.pt",
                     "total_line_crossings": 11,
                     "total_zone_transitions": 7,
@@ -148,26 +195,64 @@ class PlottingTests(unittest.TestCase):
                     "short_track_ratio": 0.1,
                     "suspected_handoff_count": 2,
                     "duplicate_suppressed_events": 5,
+                    "lidar_supported_track_count": 0,
+                    "lidar_unsupported_track_count": 0,
+                    "fused_confirmation_events": 0,
+                    "suppressed_camera_only_tracks": 0,
+                    "average_lidar_support_ratio": 0.0,
+                },
+                {
+                    "scene_name": "intersection_demo",
+                    "system_variant": "camera_lidar_bytetrack_fusion",
+                    "tracker_name": "bytetrack",
+                    "fusion_enabled": 1,
+                    "model": "yolov8n.pt",
+                    "total_line_crossings": 9,
+                    "total_zone_transitions": 6,
+                    "left_count": 1,
+                    "straight_count": 4,
+                    "right_count": 1,
+                    "unknown_count": 1,
+                    "unknown_movement_ratio": 0.142857,
+                    "avg_track_length": 16.5,
+                    "short_track_ratio": 0.08,
+                    "suspected_handoff_count": 1,
+                    "duplicate_suppressed_events": 2,
+                    "lidar_supported_track_count": 6,
+                    "lidar_unsupported_track_count": 2,
+                    "fused_confirmation_events": 6,
+                    "suppressed_camera_only_tracks": 2,
+                    "average_lidar_support_ratio": 0.65,
                 },
             ]
             transition_rows = [
                 {
                     "scene_name": "intersection_demo",
+                    "system_variant": "camera_bytetrack",
                     "tracker_name": "bytetrack",
                     "transition_name": "far_entry->foreground_exit",
                     "count": 6,
                 },
                 {
                     "scene_name": "intersection_demo",
+                    "system_variant": "camera_botsort",
                     "tracker_name": "botsort",
                     "transition_name": "far_entry->foreground_exit",
                     "count": 5,
+                },
+                {
+                    "scene_name": "intersection_demo",
+                    "system_variant": "camera_lidar_bytetrack_fusion",
+                    "tracker_name": "bytetrack",
+                    "transition_name": "far_entry->foreground_exit",
+                    "count": 4,
                 },
             ]
             gt_rows = [
                 {
                     "scene_name": "intersection_demo",
                     "subset_name": "short_subset",
+                    "system_variant": "camera_bytetrack",
                     "tracker_name": "bytetrack",
                     "frame_start": 100,
                     "frame_end": 130,
@@ -183,6 +268,7 @@ class PlottingTests(unittest.TestCase):
                 {
                     "scene_name": "intersection_demo",
                     "subset_name": "interaction_subset",
+                    "system_variant": "camera_bytetrack",
                     "tracker_name": "bytetrack",
                     "frame_start": 1646,
                     "frame_end": 1655,
@@ -198,6 +284,7 @@ class PlottingTests(unittest.TestCase):
                 {
                     "scene_name": "intersection_demo",
                     "subset_name": "short_subset",
+                    "system_variant": "camera_botsort",
                     "tracker_name": "botsort",
                     "frame_start": 100,
                     "frame_end": 130,
@@ -213,6 +300,7 @@ class PlottingTests(unittest.TestCase):
                 {
                     "scene_name": "intersection_demo",
                     "subset_name": "interaction_subset",
+                    "system_variant": "camera_botsort",
                     "tracker_name": "botsort",
                     "frame_start": 1646,
                     "frame_end": 1655,
@@ -243,6 +331,9 @@ class PlottingTests(unittest.TestCase):
             )
             self.assertTrue(
                 any(path.name == "transitions_intersection_demo.pdf" for path in scene_outputs)
+            )
+            self.assertTrue(
+                any(path.name == "fusion_diagnostics_intersection_demo.png" for path in scene_outputs)
             )
             self.assertTrue(
                 any(path.name == "gt_metrics_intersection_demo_short_subset.png" for path in scene_outputs)

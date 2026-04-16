@@ -15,6 +15,7 @@ from traffic_analytics.io_utils import ensure_dir, write_csv
 GT_SUMMARY_FIELDS = [
     "scene_name",
     "subset_name",
+    "system_variant",
     "tracker_name",
     "frame_start",
     "frame_end",
@@ -31,6 +32,7 @@ GT_SUMMARY_FIELDS = [
 FILTER_CHECK_FIELDS = [
     "scene_name",
     "subset_name",
+    "system_variant",
     "tracker_name",
     "frame_start",
     "frame_end",
@@ -148,6 +150,7 @@ def filter_prediction_rows(
 
 def build_filter_check_row(
     subset: GroundTruthSubset,
+    system_variant: str,
     tracker_name: str,
     gt_rows: list[dict[str, str]],
     prediction_rows: list[dict[str, str]],
@@ -155,6 +158,7 @@ def build_filter_check_row(
     return {
         "scene_name": subset.scene_name,
         "subset_name": subset.subset_name,
+        "system_variant": system_variant,
         "tracker_name": tracker_name,
         "frame_start": subset.frame_start,
         "frame_end": subset.frame_end,
@@ -226,7 +230,7 @@ def prepare_trackeval_workspace(
 
 def evaluate_with_trackeval(
     subset: GroundTruthSubset,
-    tracker_names: tuple[str, ...],
+    system_variants: tuple[str, ...],
     filtered_gt_rows: list[dict[str, str]],
     workspace_paths: dict[str, Path],
     trackeval_root: Path,
@@ -254,8 +258,8 @@ def evaluate_with_trackeval(
             "GT_FOLDER": str(workspace_paths["gt_root"]),
             "TRACKERS_FOLDER": str(workspace_paths["trackers_root"]),
             "OUTPUT_FOLDER": str(workspace_paths["results_root"]),
-            "TRACKERS_TO_EVAL": list(tracker_names),
-            "TRACKER_DISPLAY_NAMES": [_display_tracker_name(name) for name in tracker_names],
+            "TRACKERS_TO_EVAL": list(system_variants),
+            "TRACKER_DISPLAY_NAMES": [_display_system_variant_name(name) for name in system_variants],
             "CLASSES_TO_EVAL": ["pedestrian"],
             "BENCHMARK": "CUSTOM",
             "SPLIT_TO_EVAL": "all",
@@ -286,7 +290,7 @@ def evaluate_with_trackeval(
     output_res, output_msg = evaluator.evaluate([dataset], metrics)
     return extract_trackeval_summary_rows(
         subset=subset,
-        tracker_names=tracker_names,
+        system_variants=system_variants,
         filtered_gt_rows=filtered_gt_rows,
         output_res=output_res,
         output_msg=output_msg,
@@ -295,7 +299,7 @@ def evaluate_with_trackeval(
 
 def extract_trackeval_summary_rows(
     subset: GroundTruthSubset,
-    tracker_names: tuple[str, ...],
+    system_variants: tuple[str, ...],
     filtered_gt_rows: list[dict[str, str]],
     output_res: dict[str, Any],
     output_msg: dict[str, Any],
@@ -305,11 +309,11 @@ def extract_trackeval_summary_rows(
     num_gt_tracks = len({str(row["track_id"]) for row in filtered_gt_rows})
 
     rows: list[dict[str, object]] = []
-    for tracker_name in tracker_names:
-        tracker_output = output_res.get(dataset_name, {}).get(tracker_name)
+    for system_variant in system_variants:
+        tracker_output = output_res.get(dataset_name, {}).get(system_variant)
         if tracker_output is None:
-            message = output_msg.get(dataset_name, {}).get(tracker_name, "Unknown TrackEval error")
-            raise RuntimeError(f"TrackEval did not return results for {tracker_name}: {message}")
+            message = output_msg.get(dataset_name, {}).get(system_variant, "Unknown TrackEval error")
+            raise RuntimeError(f"TrackEval did not return results for {system_variant}: {message}")
 
         combined = tracker_output["COMBINED_SEQ"]["pedestrian"]
         hota_metrics = combined["HOTA"]
@@ -320,7 +324,8 @@ def extract_trackeval_summary_rows(
             {
                 "scene_name": subset.scene_name,
                 "subset_name": subset.subset_name,
-                "tracker_name": tracker_name,
+                "system_variant": system_variant,
+                "tracker_name": _tracker_name_from_system_variant(system_variant),
                 "frame_start": subset.frame_start,
                 "frame_end": subset.frame_end,
                 "num_gt_frames": num_gt_frames,
@@ -344,7 +349,7 @@ def render_gt_latex_table(rows: list[dict[str, object]]) -> str:
         "\\label{tab:gt_tracking_metrics}",
         "\\begin{tabular}{llrrrrrrrr}",
         "\\toprule",
-        "Scene & Subset & Tracker & HOTA & IDF1 & MOTA & IDSW & FP & FN & GT Tracks \\\\",
+        "Scene & Subset & System Variant & HOTA & IDF1 & MOTA & IDSW & FP & FN & GT Tracks \\\\",
         "\\midrule",
     ]
     for row in rows:
@@ -353,7 +358,7 @@ def render_gt_latex_table(rows: list[dict[str, object]]) -> str:
                 (
                     _latex_escape(_display_scene_name(str(row["scene_name"]))),
                     _latex_escape(str(row["subset_name"])),
-                    _latex_escape(_display_tracker_name(str(row["tracker_name"]))),
+                    _latex_escape(_display_system_variant_name(str(row["system_variant"]))),
                     _format_float(float(row["HOTA"])),
                     _format_float(float(row["IDF1"])),
                     _format_float(float(row["MOTA"])),
@@ -389,12 +394,12 @@ def write_gt_outputs(
     merged_gt_rows = _merge_existing_rows(
         gt_summary_path,
         gt_rows,
-        key_fields=("scene_name", "subset_name", "tracker_name"),
+        key_fields=("scene_name", "subset_name", "system_variant"),
     )
     merged_filter_rows = _merge_existing_rows(
         filter_checks_path,
         filter_check_rows,
-        key_fields=("scene_name", "subset_name", "tracker_name"),
+        key_fields=("scene_name", "subset_name", "system_variant"),
     )
 
     write_csv(merged_gt_rows, GT_SUMMARY_FIELDS, gt_summary_path)
@@ -415,6 +420,7 @@ def run_subset_evaluation(
     trackeval_root: Path,
     ground_truth_root: Path,
     output_root: Path,
+    system_variants: tuple[str, ...] | None = None,
 ) -> dict[str, Path]:
     subset = load_ground_truth_subset(
         scene_name=scene_name,
@@ -429,10 +435,20 @@ def run_subset_evaluation(
     gt_rows = load_csv_rows(subset.gt_tracks_path)
     filtered_gt_rows = filter_ground_truth_rows(gt_rows, subset)
 
+    system_variants = system_variants or tuple(
+        f"camera_{tracker_name}" for tracker_name in tracker_names
+    )
+
     predictions_by_tracker = {}
     filter_check_rows = []
-    for tracker_name in tracker_names:
-        tracks_path = output_root / subset.scene_name / tracker_name / "tracks.csv"
+    for system_variant in system_variants:
+        tracker_name = _tracker_name_from_system_variant(system_variant)
+        tracks_path = _resolve_tracks_path(
+            output_root=output_root,
+            scene_name=subset.scene_name,
+            system_variant=system_variant,
+            tracker_name=tracker_name,
+        )
         if not tracks_path.exists():
             raise FileNotFoundError(
                 f"Prediction tracks CSV not found: {tracks_path}. "
@@ -440,10 +456,11 @@ def run_subset_evaluation(
             )
         prediction_rows = load_csv_rows(tracks_path)
         filtered_prediction_rows = filter_prediction_rows(prediction_rows, subset)
-        predictions_by_tracker[tracker_name] = filtered_prediction_rows
+        predictions_by_tracker[system_variant] = filtered_prediction_rows
         filter_check_rows.append(
             build_filter_check_row(
                 subset=subset,
+                system_variant=system_variant,
                 tracker_name=tracker_name,
                 gt_rows=filtered_gt_rows,
                 prediction_rows=filtered_prediction_rows,
@@ -466,7 +483,7 @@ def run_subset_evaluation(
     )
     gt_summary_rows = evaluate_with_trackeval(
         subset=subset,
-        tracker_names=tracker_names,
+        system_variants=system_variants,
         filtered_gt_rows=filtered_gt_rows,
         workspace_paths=workspace_paths,
         trackeval_root=trackeval_root,
@@ -638,7 +655,7 @@ def _merge_existing_rows(
     existing_rows: list[dict[str, object]] = []
     if path.exists():
         existing_rows = [
-            {key: value for key, value in row.items()}
+            _normalize_existing_eval_row({key: value for key, value in row.items()})
             for row in load_csv_rows(path)
         ]
 
@@ -674,6 +691,15 @@ def _normalize_optional_string(value: Any) -> str | None:
     return str(value)
 
 
+def _normalize_existing_eval_row(row: dict[str, object]) -> dict[str, object]:
+    normalized = dict(row)
+    if str(normalized.get("system_variant", "")).strip() == "":
+        tracker_name = str(normalized.get("tracker_name", "")).strip().lower()
+        if tracker_name:
+            normalized["system_variant"] = f"camera_{tracker_name}"
+    return normalized
+
+
 def _display_scene_name(scene_name: str) -> str:
     return scene_name.replace("_", " ").title()
 
@@ -684,6 +710,36 @@ def _display_tracker_name(tracker_name: str) -> str:
         "botsort": "BoT-SORT",
     }
     return mapping.get(tracker_name.lower(), tracker_name)
+
+
+def _display_system_variant_name(system_variant: str) -> str:
+    mapping = {
+        "camera_bytetrack": "Camera ByteTrack",
+        "camera_botsort": "Camera BoT-SORT",
+        "camera_lidar_bytetrack_fusion": "Camera+LiDAR ByteTrack",
+        "camera_lidar_botsort_fusion": "Camera+LiDAR BoT-SORT",
+        "camera_lidar_fusion": "Camera+LiDAR Fusion",
+    }
+    return mapping.get(system_variant.lower(), system_variant.replace("_", " ").title())
+
+
+def _tracker_name_from_system_variant(system_variant: str) -> str:
+    normalized = system_variant.lower()
+    if "botsort" in normalized:
+        return "botsort"
+    return "bytetrack"
+
+
+def _resolve_tracks_path(
+    output_root: Path,
+    scene_name: str,
+    system_variant: str,
+    tracker_name: str,
+) -> Path:
+    normalized = system_variant.lower()
+    if normalized == f"camera_{tracker_name}":
+        return output_root / scene_name / tracker_name / "tracks.csv"
+    return output_root / scene_name / system_variant / "tracks.csv"
 
 
 def _format_float(value: float) -> str:

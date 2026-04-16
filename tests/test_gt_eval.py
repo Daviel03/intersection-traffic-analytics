@@ -110,6 +110,7 @@ class GroundTruthEvalTests(unittest.TestCase):
         filtered_predictions = filter_prediction_rows(prediction_rows, subset)
         filter_row = build_filter_check_row(
             subset=subset,
+            system_variant="camera_bytetrack",
             tracker_name="bytetrack",
             gt_rows=filtered_gt,
             prediction_rows=filtered_predictions,
@@ -182,7 +183,7 @@ class GroundTruthEvalTests(unittest.TestCase):
         ]
         output_res = {
             "MotChallenge2DBox": {
-                "bytetrack": {
+                "camera_bytetrack": {
                     "COMBINED_SEQ": {
                         "pedestrian": {
                             "HOTA": {"HOTA": [0.6, 0.8]},
@@ -191,7 +192,7 @@ class GroundTruthEvalTests(unittest.TestCase):
                         }
                     }
                 },
-                "botsort": {
+                "camera_botsort": {
                     "COMBINED_SEQ": {
                         "pedestrian": {
                             "HOTA": {"HOTA": [0.65, 0.75]},
@@ -202,17 +203,18 @@ class GroundTruthEvalTests(unittest.TestCase):
                 },
             }
         }
-        output_msg = {"MotChallenge2DBox": {"bytetrack": "ok", "botsort": "ok"}}
+        output_msg = {"MotChallenge2DBox": {"camera_bytetrack": "ok", "camera_botsort": "ok"}}
 
         rows = extract_trackeval_summary_rows(
             subset=subset,
-            tracker_names=("bytetrack", "botsort"),
+            system_variants=("camera_bytetrack", "camera_botsort"),
             filtered_gt_rows=filtered_gt_rows,
             output_res=output_res,
             output_msg=output_msg,
         )
 
         self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["system_variant"], "camera_bytetrack")
         self.assertEqual(rows[0]["num_gt_frames"], 2)
         self.assertEqual(rows[0]["num_gt_tracks"], 2)
         self.assertEqual(rows[0]["HOTA"], 70.0)

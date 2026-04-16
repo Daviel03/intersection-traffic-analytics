@@ -1,10 +1,12 @@
 # Intersection Traffic Analytics MVP
 
-This repo is a small, class-project-friendly traffic analytics pipeline for a single intersection scene.
+This repo is a small, class-project-friendly traffic analytics pipeline for intersection scenes.
 
 It uses one shared detector (`yolov8n.pt`) and switches only the tracker backend (`ByteTrack` vs `BoT-SORT`) so the comparison stays fair:
 
 `detect -> track -> analyze -> export -> visualize`
+
+On top of that camera-only baseline, the repo now also includes a lightweight camera+LiDAR late-fusion layer that can reuse the same downstream analytics and experiment tables without turning the project into a heavy multimodal stack.
 
 ## Reference Backbone
 
@@ -38,6 +40,7 @@ Phase 1 is working and already includes:
 - two full-scene comparison runs: `intersection_demo` and `intersection_behnam`
 - scene-calibration helpers for previewing overlays and clicking YAML-ready points
 - experiment aggregation into CSV, LaTeX tables, and PNG/PDF plots
+- optional camera+LiDAR late-fusion experiments using precomputed or lightweight mock LiDAR evidence
 - GT-backed subset evaluation with TrackEval-compatible exports
 - multiple included GT subsets, from a tiny sanity check to a longer continuous chunk
 
@@ -57,6 +60,8 @@ Phase 1 is working and already includes:
 |     |- intersection_demo.yaml
 |     `- intersection_behnam.yaml
 |- data/
+|  |- lidar/
+|  |  `- README.md
 |  `- ground_truth/
 |     |- intersection_demo/
 |     `- intersection_behnam/
@@ -64,13 +69,17 @@ Phase 1 is working and already includes:
 |- scripts/
 |  |- run_pipeline.py
 |  |- compare_trackers.py
+|  |- link_external_data.py
 |  |- export_scene_preview.py
 |  |- pick_scene_points.py
 |  |- run_experiments.py
+|  |- run_fusion_experiments.py
 |  |- make_plots.py
 |  |- run_gt_eval.py
 |  |- run_gt_suite.py
 |  `- bootstrap_gt_subset.py
+|- notebooks/
+|  `- colab_runner.ipynb
 |- tests/
 `- src/traffic_analytics/
    |- pipeline.py
@@ -79,6 +88,10 @@ Phase 1 is working and already includes:
    |- visualization.py
    |- evaluation.py
    |- experiments.py
+   |- external_data.py
+   |- lidar.py
+   |- fusion.py
+   |- fusion_experiments.py
    |- plotting.py
    |- gt_eval.py
    |- gt_bootstrap.py
@@ -139,6 +152,12 @@ python scripts/run_experiments.py
 python scripts/make_plots.py
 ```
 
+Optional: add the late-fusion layer and regenerate the experiment outputs with a fused system variant:
+
+```bash
+python scripts/run_fusion_experiments.py --make-plots
+```
+
 4. Run the GT-backed evaluation layer if TrackEval is available locally
 
 ```bash
@@ -150,6 +169,37 @@ That sequence gives you:
 - per-scene tracker outputs under `outputs/<scene>/`
 - aggregate CSV and LaTeX summaries under `outputs/experiments/`
 - full-scene plots and GT plots under `outputs/experiments/plots/`
+
+## Colab / Drive Workflow
+
+If your camera or LiDAR files are too large to work with comfortably on your laptop, the cleanest setup is:
+
+- GitHub repo = code, configs, tests, small GT subsets
+- Google Drive = raw videos, raw LiDAR, large evidence files, large outputs
+- Colab = runner with optional GPU
+
+The repo includes:
+
+- [colab_runner.ipynb](/e:/No Hands No Problem- Autonomous Driving/notebooks/colab_runner.ipynb)
+- [link_external_data.py](/e:/No Hands No Problem- Autonomous Driving/scripts/link_external_data.py)
+
+The helper script links or copies external data into the repo layout so the existing scene YAMLs work without hardcoding your Drive paths into the repo.
+
+Typical Colab flow:
+
+```bash
+python scripts/link_external_data.py --scene intersection_demo --camera-source /content/drive/MyDrive/traffic_data/intersection_demo.mp4 --lidar-source /content/drive/MyDrive/traffic_data/intersection_demo_evidence.csv --force
+python scripts/compare_trackers.py --scene configs/scenes/intersection_demo.yaml --output-root /content/drive/MyDrive/traffic_analytics_outputs
+python scripts/run_fusion_experiments.py --scenes intersection_demo --output-root /content/drive/MyDrive/traffic_analytics_outputs --make-plots
+```
+
+If you prefer a scene copy that records the linked paths explicitly, add:
+
+```bash
+python scripts/link_external_data.py --scene intersection_demo --camera-source /content/drive/MyDrive/traffic_data/intersection_demo.mp4 --lidar-source /content/drive/MyDrive/traffic_data/intersection_demo_evidence.csv --scene-copy configs/scenes/intersection_demo_colab.yaml --force
+```
+
+That writes a scene YAML copy with updated `video_path` and optional `lidar_evidence_path`.
 
 ## Usage
 
@@ -180,6 +230,12 @@ python scripts/pick_scene_points.py --scene configs/scenes/intersection_demo.yam
 python scripts/pick_scene_points.py --scene configs/scenes/intersection_demo.yaml --frame-index 960 --kind line --name right_exit_line
 ```
 
+Link large external camera / LiDAR data into the repo layout, which is especially handy in Colab:
+
+```bash
+python scripts/link_external_data.py --scene intersection_demo --camera-source /absolute/path/to/intersection_demo.mp4 --lidar-source /absolute/path/to/evidence.csv --force
+```
+
 Run the Behnam-based reference scene:
 
 ```bash
@@ -206,11 +262,21 @@ Generate paper-ready plots from the aggregated CSVs:
 python scripts/make_plots.py
 ```
 
+Run the camera+LiDAR late-fusion experiment layer:
+
+```bash
+python scripts/run_fusion_experiments.py
+python scripts/run_fusion_experiments.py --fusion-trackers bytetrack botsort --make-plots
+```
+
+If you already have per-scene LiDAR evidence CSV files under `data/lidar/<scene>/evidence.csv`, the fusion script will use them. If not, it falls back to a lightweight mock motion-based evidence generator unless `--no-mock-lidar` is passed.
+
 Run optional GT-backed subset evaluation with a local TrackEval checkout:
 
 ```bash
 python scripts/bootstrap_gt_subset.py --scene intersection_demo --subset long_chunk_subset --frame-start 1660 --frame-end 1839 --classes car
 python scripts/run_gt_eval.py --scene intersection_demo --subset short_subset --trackeval-root /path/to/TrackEval
+python scripts/run_gt_eval.py --scene intersection_demo --subset short_subset --system-variants camera_bytetrack camera_lidar_bytetrack_fusion --trackeval-root /path/to/TrackEval
 python scripts/run_gt_eval.py --scene intersection_demo --subset interaction_subset --trackeval-root /path/to/TrackEval
 python scripts/run_gt_eval.py --scene intersection_demo --subset interaction_wide_subset --trackeval-root /path/to/TrackEval
 python scripts/run_gt_eval.py --scene intersection_behnam --subset roundabout_turn_subset --trackeval-root /path/to/TrackEval
@@ -243,6 +309,7 @@ Optional Phase 1 fields:
 - `active_area`: ignore detections outside the usable intersection region
 - `model`: override the default detector from `configs/default.yaml`
 - `analytics_classes`: optional subset of `target_classes` that contribute to line counts, zone events, and movement summaries
+- `lidar_evidence_path`: optional path to a precomputed LiDAR evidence CSV for the fusion runner
 
 `target_classes` must be class names, not COCO indices. Example:
 
@@ -360,9 +427,53 @@ The quick comparison exports also include per-class track counts and frame-level
 The report-facing evaluation stack is intentionally split into two layers:
 
 - full-scene experiment outputs: application-level traffic analytics metrics from the complete intersection clips
+- optional camera+LiDAR late-fusion outputs: the same downstream analytics after conservative late fusion
 - GT-backed subset outputs: labeled-subset tracking metrics from TrackEval
 
 These layers should not be interpreted the same way. The full-scene metrics tell you how tracker choice changes downstream traffic analytics outcomes. The GT subset provides a limited-scope MOT-style sanity check with standard tracking metrics.
+
+## Camera + LiDAR Late Fusion
+
+The fusion extension is intentionally lightweight.
+
+The camera-only baselines stay exactly as they are:
+
+- `camera_bytetrack`
+- `camera_botsort`
+
+The fused layer adds one or more system variants such as:
+
+- `camera_lidar_bytetrack_fusion`
+- `camera_lidar_botsort_fusion`
+
+The v1 fusion flow is:
+
+1. reuse existing camera track outputs
+2. load synchronized or precomputed LiDAR evidence
+3. match LiDAR evidence to camera tracks using bbox IoU and bottom-center proximity
+4. confirm or suppress tracks conservatively
+5. rerun the same traffic analytics logic on the fused track set
+
+This keeps the comparison controlled: same scene, same detector, same class filters, same movement logic, same geometry; only the system variant changes.
+
+Expected LiDAR evidence path:
+
+```text
+data/
+  lidar/
+    <scene_name>/
+      evidence.csv
+```
+
+See [data/lidar/README.md](/e:/No%20Hands%20No%20Problem-%20Autonomous%20Driving/data/lidar/README.md) for the CSV contract.
+
+You can also point a scene YAML directly at an evidence file with:
+
+```yaml
+lidar_evidence_path: data/lidar/intersection_demo/evidence.csv
+```
+
+If no real LiDAR evidence is available, `run_fusion_experiments.py` can generate a mock motion-based evidence file from the camera tracks. That is useful for exercising the interface and experiment layer, but it should be described honestly in a paper as a lightweight placeholder rather than a real sensor benchmark.
 
 ## Experiment Outputs
 
@@ -376,6 +487,7 @@ outputs/
     tables/
       analytics_table.tex
       continuity_table.tex
+      fusion_table.tex
     plots/
       movement_counts_<scene>.png
       movement_counts_<scene>.pdf
@@ -385,6 +497,8 @@ outputs/
       tracking_proxies_<scene>.pdf
       transitions_<scene>.png
       transitions_<scene>.pdf
+      fusion_diagnostics_<scene>.png
+      fusion_diagnostics_<scene>.pdf
       gt_metrics_<scene>_<subset>.png
       gt_metrics_<scene>_<subset>.pdf
     gt/
@@ -394,8 +508,11 @@ outputs/
       workspace/
 ```
 
-`metrics_summary.csv` stores one row per `(scene, tracker)` run with:
+`metrics_summary.csv` stores one row per `(scene, system_variant)` run with:
 
+- `system_variant`
+- `tracker_name`
+- `fusion_enabled`
 - total line crossings
 - total zone transitions
 - left / straight / right / unknown counts
@@ -404,10 +521,17 @@ outputs/
 - short-track ratio
 - suspected handoff count
 - duplicate-suppressed events
+- LiDAR-supported track count
+- LiDAR-unsupported track count
+- fused confirmation events
+- suppressed camera-only tracks
+- average LiDAR support ratio
 
-`transition_counts.csv` stores one row per named transition such as `far_entry->foreground_exit`.
+`transition_counts.csv` stores one row per named transition such as `far_entry->foreground_exit`, keyed by `scene_name` and `system_variant`.
 
 `run_experiments.py` reuses existing scene outputs by default and reruns only missing scenes unless `--force-rerun` is passed.
+
+`run_fusion_experiments.py` preserves the camera-only baselines, adds one or more fused system variants, then rewrites the same aggregate CSV / table / plot outputs so the paper-facing comparison can include all variants together.
 
 `make_plots.py` reads the aggregated CSVs and regenerates the PNG/PDF plots independently, so you do not need to rerun the trackers just to refresh figures.
 
@@ -450,8 +574,15 @@ Optional metadata:
 
 The GT script filters both GT and predictions to the same frame range and class list before TrackEval runs. The selected classes are then collapsed into one MOT-style evaluation class after filtering so TrackEval can score association quality on the chosen objects.
 
+By default the GT path evaluates the camera-only system variants derived from the tracker names. You can also point it at fused outputs with `--system-variants`, for example:
+
+```bash
+python scripts/run_gt_eval.py --scene intersection_demo --subset short_subset --system-variants camera_bytetrack camera_lidar_bytetrack_fusion --trackeval-root /path/to/TrackEval
+```
+
 `gt_eval_summary.csv` stores:
 
+- `system_variant`
 - `HOTA`
 - `IDF1`
 - `MOTA`
@@ -480,4 +611,5 @@ For Overleaf, the generated `.tex` tables use `booktabs`, so add:
 - BoT-SORT starts with ReID disabled to keep the baseline lightweight and fair.
 - `configs/trackers/bytetrack.yaml` and `configs/trackers/botsort.yaml` follow the official Ultralytics tracker config pattern.
 - Full-scene analytics are application-level outcomes, not stand-alone proof of universal tracker quality.
+- Fusion diagnostics are lightweight support metrics for this class project, not stand-alone evidence of production-grade AV fusion quality.
 - GT subset results are standard-style tracking evidence, but still limited-scope rather than a full benchmark study.

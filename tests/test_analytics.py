@@ -112,6 +112,7 @@ class EvaluationTests(unittest.TestCase):
             project_root=PROJECT_ROOT,
             scene_path=PROJECT_ROOT / "configs" / "scenes" / "intersection_demo.yaml",
             video_path=PROJECT_ROOT / "data" / "intersection_demo.mp4",
+            lidar_evidence_path=None,
             output_name="intersection_demo",
             output_dir=PROJECT_ROOT / "outputs" / "intersection_demo" / "bytetrack",
             comparison_dir=PROJECT_ROOT / "outputs" / "intersection_demo" / "comparison",

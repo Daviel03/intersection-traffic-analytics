@@ -19,6 +19,10 @@ class TrackedObject:
     confidence: float
     bbox: BBox
     point: Point
+    lidar_supported: bool = False
+    lidar_support_score: float = 0.0
+    lidar_range_m: float | None = None
+    fused_confidence: float | None = None
 
     def to_csv_row(self) -> dict[str, object]:
         x1, y1, x2, y2 = self.bbox
@@ -36,7 +40,56 @@ class TrackedObject:
             "y2": round(y2, 3),
             "point_x": round(point_x, 3),
             "point_y": round(point_y, 3),
+            "lidar_supported": int(self.lidar_supported),
+            "lidar_support_score": round(self.lidar_support_score, 6),
+            "lidar_range_m": (
+                "" if self.lidar_range_m is None else round(self.lidar_range_m, 6)
+            ),
+            "fused_confidence": round(
+                self.fused_confidence if self.fused_confidence is not None else self.confidence,
+                6,
+            ),
         }
+
+    @classmethod
+    def from_csv_row(cls, row: dict[str, object]) -> "TrackedObject":
+        bbox = (
+            float(row["x1"]),
+            float(row["y1"]),
+            float(row["x2"]),
+            float(row["y2"]),
+        )
+        point = (
+            float(row.get("point_x") or bottom_center(bbox)[0]),
+            float(row.get("point_y") or bottom_center(bbox)[1]),
+        )
+        lidar_supported_raw = row.get("lidar_supported", 0)
+        lidar_supported = str(lidar_supported_raw).strip().lower() not in {
+            "",
+            "0",
+            "false",
+            "none",
+        }
+        lidar_range_raw = row.get("lidar_range_m")
+        fused_confidence_raw = row.get("fused_confidence")
+        return cls(
+            frame_idx=int(row["frame_idx"]),
+            timestamp_sec=float(row.get("timestamp_sec", 0.0)),
+            track_id=int(row["track_id"]),
+            class_id=int(row.get("class_id", 0)),
+            class_name=str(row["class_name"]),
+            confidence=float(row.get("confidence", 0.0)),
+            bbox=bbox,
+            point=point,
+            lidar_supported=lidar_supported,
+            lidar_support_score=float(row.get("lidar_support_score") or 0.0),
+            lidar_range_m=None
+            if lidar_range_raw in (None, "")
+            else float(lidar_range_raw),
+            fused_confidence=None
+            if fused_confidence_raw in (None, "")
+            else float(fused_confidence_raw),
+        )
 
 
 class UltralyticsTrackerBackend:

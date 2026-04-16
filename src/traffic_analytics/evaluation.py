@@ -84,6 +84,9 @@ def build_run_summary(
     track_rows: list[dict[str, object]],
     frame_count: int,
     fps: float,
+    system_variant: str | None = None,
+    fusion_enabled: bool = False,
+    fusion_diagnostics: dict[str, object] | None = None,
 ) -> dict[str, Any]:
     per_track = summarize_track_rows(track_rows)
     frame_lengths = [int(item["frame_count"]) for item in per_track.values()]
@@ -122,12 +125,25 @@ def build_run_summary(
         if analytic_track_count
         else 0.0
     )
+    normalized_fusion_diagnostics = {
+        "lidar_supported_track_count": 0,
+        "lidar_unsupported_track_count": 0,
+        "fused_confirmation_events": 0,
+        "suppressed_camera_only_tracks": 0,
+        "average_lidar_support_ratio": 0.0,
+    }
+    if fusion_diagnostics:
+        for key in normalized_fusion_diagnostics:
+            if key in fusion_diagnostics:
+                normalized_fusion_diagnostics[key] = fusion_diagnostics[key]
 
     return {
         "scene_path": str(config.scene_path),
         "video_path": str(config.video_path),
         "output_name": config.output_name,
         "tracker_name": config.tracker_name,
+        "system_variant": system_variant or f"camera_{config.tracker_name}",
+        "fusion_enabled": fusion_enabled,
         "model": config.model,
         "target_classes": list(config.target_classes),
         "analytics_classes": list(config.analytics_classes),
@@ -144,6 +160,7 @@ def build_run_summary(
         "transition_matrix": transition_matrix,
         "duplicate_suppressed_events": int(analytics_summary["duplicate_suppressed_events"]),
         "unknown_track_ids": list(analytics_summary["unknown_track_ids"]),
+        "fusion_diagnostics": normalized_fusion_diagnostics,
         "continuity_proxies": {
             "unique_track_count": unique_track_count,
             "average_track_length_frames": round(average_track_length_frames, 6),

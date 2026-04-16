@@ -11,6 +11,31 @@ def bottom_center(bbox: BBox) -> Point:
     return ((x1 + x2) / 2.0, y2)
 
 
+def bbox_center(bbox: BBox) -> Point:
+    x1, y1, x2, y2 = bbox
+    return ((x1 + x2) / 2.0, (y1 + y2) / 2.0)
+
+
+def bbox_iou(box_a: BBox, box_b: BBox) -> float:
+    inter_x1 = max(box_a[0], box_b[0])
+    inter_y1 = max(box_a[1], box_b[1])
+    inter_x2 = min(box_a[2], box_b[2])
+    inter_y2 = min(box_a[3], box_b[3])
+
+    inter_width = max(0.0, inter_x2 - inter_x1)
+    inter_height = max(0.0, inter_y2 - inter_y1)
+    inter_area = inter_width * inter_height
+    if inter_area <= 0.0:
+        return 0.0
+
+    area_a = max(0.0, box_a[2] - box_a[0]) * max(0.0, box_a[3] - box_a[1])
+    area_b = max(0.0, box_b[2] - box_b[0]) * max(0.0, box_b[3] - box_b[1])
+    union_area = area_a + area_b - inter_area
+    if union_area <= 0.0:
+        return 0.0
+    return inter_area / union_area
+
+
 def distance(point_a: Point, point_b: Point) -> float:
     dx = point_a[0] - point_b[0]
     dy = point_a[1] - point_b[1]

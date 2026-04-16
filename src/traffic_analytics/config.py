@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,7 @@ class RuntimeConfig:
     project_root: Path
     scene_path: Path
     video_path: Path
+    lidar_evidence_path: Path | None
     output_name: str
     output_dir: Path
     comparison_dir: Path
@@ -87,6 +89,11 @@ def load_runtime_config(
     visualization_defaults = defaults.get("visualization", {})
 
     video_path = _resolve_path(scene["video_path"])
+    lidar_evidence_path = (
+        _resolve_path(scene["lidar_evidence_path"])
+        if "lidar_evidence_path" in scene
+        else None
+    )
     output_name = str(scene["output_name"])
     resolved_output_root = _resolve_path(output_root or "outputs")
     output_base = resolved_output_root / output_name
@@ -107,6 +114,7 @@ def load_runtime_config(
         project_root=PROJECT_ROOT,
         scene_path=resolved_scene_path,
         video_path=video_path,
+        lidar_evidence_path=lidar_evidence_path,
         output_name=output_name,
         output_dir=output_base / tracker_name,
         comparison_dir=output_base / "comparison",
@@ -148,7 +156,7 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 
 
 def _resolve_path(value: str | Path) -> Path:
-    candidate = Path(value)
+    candidate = Path(os.path.expandvars(str(value)))
     if candidate.is_absolute():
         return candidate
     return (PROJECT_ROOT / candidate).resolve()

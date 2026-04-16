@@ -11,10 +11,19 @@ from traffic_analytics.pipeline import run_pipeline
 DEFAULT_SCENES = ("intersection_demo", "intersection_behnam")
 DEFAULT_TRACKERS = ("bytetrack", "botsort")
 MOVEMENT_LABELS = ("left", "straight", "right", "unknown")
+SYSTEM_VARIANT_ORDER = (
+    "camera_bytetrack",
+    "camera_botsort",
+    "camera_lidar_bytetrack_fusion",
+    "camera_lidar_botsort_fusion",
+    "camera_lidar_fusion",
+)
 
 METRICS_SUMMARY_FIELDS = [
     "scene_name",
+    "system_variant",
     "tracker_name",
+    "fusion_enabled",
     "model",
     "total_line_crossings",
     "total_zone_transitions",
@@ -27,10 +36,16 @@ METRICS_SUMMARY_FIELDS = [
     "short_track_ratio",
     "suspected_handoff_count",
     "duplicate_suppressed_events",
+    "lidar_supported_track_count",
+    "lidar_unsupported_track_count",
+    "fused_confirmation_events",
+    "suppressed_camera_only_tracks",
+    "average_lidar_support_ratio",
 ]
 
 TRANSITION_FIELDS = [
     "scene_name",
+    "system_variant",
     "tracker_name",
     "transition_name",
     "count",
@@ -63,6 +78,24 @@ def normalize_scenes(scenes: list[str] | tuple[str, ...] | None) -> tuple[Path, 
     if not scenes:
         scenes = list(DEFAULT_SCENES)
     return tuple(resolve_scene_path(scene) for scene in scenes)
+
+
+def camera_system_variant_name(tracker_name: str) -> str:
+    return f"camera_{tracker_name.lower()}"
+
+
+def fusion_system_variant_name(tracker_name: str) -> str:
+    return f"camera_lidar_{tracker_name.lower()}_fusion"
+
+
+def resolve_summary_system_variant(summary: dict[str, Any]) -> str:
+    system_variant = str(summary.get("system_variant", "")).strip()
+    if system_variant:
+        return system_variant
+    tracker_name = str(summary.get("tracker_name", "")).strip().lower()
+    if tracker_name:
+        return camera_system_variant_name(tracker_name)
+    return "camera_unknown"
 
 
 def load_summary_json(path: Path) -> dict[str, Any]:
@@ -102,6 +135,8 @@ def summary_to_metrics_row(summary: dict[str, Any]) -> dict[str, object]:
     continuity_proxies = summary.get("continuity_proxies", {})
     comparison_ready_metrics = summary.get("comparison_ready_metrics", {})
     line_counts = summary.get("line_counts", {})
+    fusion_diagnostics = summary.get("fusion_diagnostics", {})
+    tracker_name = str(summary.get("tracker_name", ""))
 
     total_line_crossings = int(
         comparison_ready_metrics.get(
@@ -115,7 +150,9 @@ def summary_to_metrics_row(summary: dict[str, Any]) -> dict[str, object]:
 
     return {
         "scene_name": str(summary.get("output_name", "")),
-        "tracker_name": str(summary.get("tracker_name", "")),
+        "system_variant": resolve_summary_system_variant(summary),
+        "tracker_name": tracker_name,
+        "fusion_enabled": int(bool(summary.get("fusion_enabled", False))),
         "model": str(summary.get("model", "")),
         "total_line_crossings": total_line_crossings,
         "total_zone_transitions": total_zone_transitions,
@@ -141,12 +178,29 @@ def summary_to_metrics_row(summary: dict[str, Any]) -> dict[str, object]:
         "duplicate_suppressed_events": int(
             summary.get("duplicate_suppressed_events", 0)
         ),
+        "lidar_supported_track_count": int(
+            fusion_diagnostics.get("lidar_supported_track_count", 0)
+        ),
+        "lidar_unsupported_track_count": int(
+            fusion_diagnostics.get("lidar_unsupported_track_count", 0)
+        ),
+        "fused_confirmation_events": int(
+            fusion_diagnostics.get("fused_confirmation_events", 0)
+        ),
+        "suppressed_camera_only_tracks": int(
+            fusion_diagnostics.get("suppressed_camera_only_tracks", 0)
+        ),
+        "average_lidar_support_ratio": round(
+            float(fusion_diagnostics.get("average_lidar_support_ratio", 0.0)),
+            6,
+        ),
     }
 
 
 def summary_to_transition_rows(summary: dict[str, Any]) -> list[dict[str, object]]:
     scene_name = str(summary.get("output_name", ""))
     tracker_name = str(summary.get("tracker_name", ""))
+    system_variant = resolve_summary_system_variant(summary)
     transition_counts = summary.get("transition_counts", {})
 
     rows: list[dict[str, object]] = []
@@ -154,6 +208,7 @@ def summary_to_transition_rows(summary: dict[str, Any]) -> list[dict[str, object
         rows.append(
             {
                 "scene_name": scene_name,
+                "system_variant": system_variant,
                 "tracker_name": tracker_name,
                 "transition_name": str(transition_name),
                 "count": int(transition_counts[transition_name]),
@@ -170,12 +225,17 @@ def aggregate_experiment_rows(
     for summary in summaries:
         transition_rows.extend(summary_to_transition_rows(summary))
 
-    metric_rows.sort(key=lambda row: (str(row["scene_name"]), str(row["tracker_name"])))
+    metric_rows.sort(
+        key=lambda row: (
+            str(row["scene_name"]),
+            _system_variant_sort_key(str(row["system_variant"])),
+        )
+    )
     transition_rows.sort(
         key=lambda row: (
             str(row["scene_name"]),
             str(row["transition_name"]),
-            str(row["tracker_name"]),
+            _system_variant_sort_key(str(row["system_variant"])),
         )
     )
     return metric_rows, transition_rows
@@ -194,6 +254,7 @@ def write_experiment_outputs(
     transition_counts_path = experiments_root / "transition_counts.csv"
     analytics_table_path = tables_dir / "analytics_table.tex"
     continuity_table_path = tables_dir / "continuity_table.tex"
+    fusion_table_path = tables_dir / "fusion_table.tex"
 
     write_csv(metric_rows, METRICS_SUMMARY_FIELDS, metrics_summary_path)
     write_csv(transition_rows, TRANSITION_FIELDS, transition_counts_path)
@@ -205,19 +266,24 @@ def write_experiment_outputs(
         render_continuity_latex_table(metric_rows),
         encoding="utf-8",
     )
+    fusion_table_path.write_text(
+        render_fusion_latex_table(metric_rows),
+        encoding="utf-8",
+    )
 
     return {
         "metrics_summary_csv": metrics_summary_path,
         "transition_counts_csv": transition_counts_path,
         "analytics_table_tex": analytics_table_path,
         "continuity_table_tex": continuity_table_path,
+        "fusion_table_tex": fusion_table_path,
     }
 
 
 def render_analytics_latex_table(metric_rows: list[dict[str, object]]) -> str:
     headers = (
         "Scene",
-        "Tracker",
+        "System Variant",
         "Line Crossings",
         "Zone Transitions",
         "Left",
@@ -231,7 +297,7 @@ def render_analytics_latex_table(metric_rows: list[dict[str, object]]) -> str:
         rows.append(
             (
                 _latex_escape(_display_scene_name(str(row["scene_name"]))),
-                _latex_escape(_display_tracker_name(str(row["tracker_name"]))),
+                _latex_escape(_display_system_variant_name(str(row["system_variant"]))),
                 str(int(row["total_line_crossings"])),
                 str(int(row["total_zone_transitions"])),
                 str(int(row["left_count"])),
@@ -245,7 +311,7 @@ def render_analytics_latex_table(metric_rows: list[dict[str, object]]) -> str:
         headers=headers,
         rows=rows,
         alignment="llrrrrrrr",
-        caption="Application-level traffic analytics metrics by scene and tracker.",
+        caption="Application-level traffic analytics metrics by scene and system variant.",
         label="tab:traffic_analytics_metrics",
     )
 
@@ -253,7 +319,7 @@ def render_analytics_latex_table(metric_rows: list[dict[str, object]]) -> str:
 def render_continuity_latex_table(metric_rows: list[dict[str, object]]) -> str:
     headers = (
         "Scene",
-        "Tracker",
+        "System Variant",
         "Avg Track Length",
         "Short-Track Ratio",
         "Suspected Handoffs",
@@ -264,7 +330,7 @@ def render_continuity_latex_table(metric_rows: list[dict[str, object]]) -> str:
         rows.append(
             (
                 _latex_escape(_display_scene_name(str(row["scene_name"]))),
-                _latex_escape(_display_tracker_name(str(row["tracker_name"]))),
+                _latex_escape(_display_system_variant_name(str(row["system_variant"]))),
                 _format_float(float(row["avg_track_length"])),
                 _format_float(float(row["short_track_ratio"])),
                 str(int(row["suspected_handoff_count"])),
@@ -275,8 +341,51 @@ def render_continuity_latex_table(metric_rows: list[dict[str, object]]) -> str:
         headers=headers,
         rows=rows,
         alignment="llrrrr",
-        caption="Tracking continuity proxy metrics by scene and tracker.",
+        caption="Tracking continuity proxy metrics by scene and system variant.",
         label="tab:tracking_continuity_metrics",
+    )
+
+
+def render_fusion_latex_table(metric_rows: list[dict[str, object]]) -> str:
+    headers = (
+        "Scene",
+        "System Variant",
+        "LiDAR-Supported Tracks",
+        "Fused Confirmations",
+        "Suppressed Camera-Only",
+        "Avg LiDAR Support Ratio",
+    )
+    rows = []
+    for row in metric_rows:
+        if int(row.get("fusion_enabled", 0)) != 1:
+            continue
+        rows.append(
+            (
+                _latex_escape(_display_scene_name(str(row["scene_name"]))),
+                _latex_escape(_display_system_variant_name(str(row["system_variant"]))),
+                str(int(row["lidar_supported_track_count"])),
+                str(int(row["fused_confirmation_events"])),
+                str(int(row["suppressed_camera_only_tracks"])),
+                _format_float(float(row["average_lidar_support_ratio"])),
+            )
+        )
+    if not rows:
+        rows.append(
+            (
+                "No fused runs",
+                "-",
+                "0",
+                "0",
+                "0",
+                "0.000",
+            )
+        )
+    return _render_booktabs_table(
+        headers=headers,
+        rows=rows,
+        alignment="llrrrr",
+        caption="Late-fusion diagnostic metrics for camera+LiDAR system variants.",
+        label="tab:fusion_diagnostics_metrics",
     )
 
 
@@ -320,6 +429,24 @@ def _display_tracker_name(tracker_name: str) -> str:
         "botsort": "BoT-SORT",
     }
     return mapping.get(tracker_name.lower(), tracker_name)
+
+
+def _display_system_variant_name(system_variant: str) -> str:
+    mapping = {
+        "camera_bytetrack": "Camera ByteTrack",
+        "camera_botsort": "Camera BoT-SORT",
+        "camera_lidar_bytetrack_fusion": "Camera+LiDAR ByteTrack Fusion",
+        "camera_lidar_botsort_fusion": "Camera+LiDAR BoT-SORT Fusion",
+        "camera_lidar_fusion": "Camera+LiDAR Fusion",
+    }
+    return mapping.get(system_variant.lower(), system_variant.replace("_", " ").title())
+
+
+def _system_variant_sort_key(system_variant: str) -> tuple[int, str]:
+    normalized = system_variant.lower()
+    if normalized in SYSTEM_VARIANT_ORDER:
+        return (SYSTEM_VARIANT_ORDER.index(normalized), normalized)
+    return (len(SYSTEM_VARIANT_ORDER), normalized)
 
 
 def _format_float(value: float) -> str:
